@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>OpenLayers PMTiles Vector Demo</title>
+        <script src="https://cdn.jsdelivr.net/npm/ol@v10.7.0/dist/ol.js"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v10.7.0/ol.css" />
+        <script src="https://unpkg.com/pmtiles@4.3.2/dist/pmtiles.js"></script>
+        <style>
+            html,
+            body {
+                font-family: sans-serif;
+                margin: 0;
+                padding: 0;
+            }
+            #map {
+                width: 400px;
+                height: 300px;
+            }
+        </style>
+    </head>
+    <body>
+        <input type="text" id="filename" value="cb_2018_us_zcta510_500k.pmtiles" />
+        <button type="button" id="button1">Load using FileSource fetch with credentials-include</button>
+        <button type="button" id="button2">Load using FetchSource with default credentials (same-origin)</button>
+        <br />
+        <br />
+        <div id="map"></div>
+
+        <script>
+            function buildLayer(pmt) {
+                return new ol.layer.VectorTile({
+                    zIndex: 10,
+                    source: new ol.source.VectorTile({
+                        format: new ol.format.MVT(),
+                        url: '{z}/{x}/{y}',
+                        tileLoadFunction: (tile, url) => {
+                            var [z, x, y] = tile.getTileCoord();
+
+                            tile.setLoader((extent, resolution, projection) => {
+                                pmt.getZxy(z, x, y)
+                                    .then((response) => {
+                                        if (response) {
+                                            tile.setFeatures(
+                                                tile.getFormat().readFeatures(response.data, {
+                                                    extent: extent,
+                                                    featureProjection: projection
+                                                })
+                                            );
+                                        }
+                                    })
+                                    .catch((exc) => {
+                                        console.error(exc);
+                                    });
+                            });
+                        }
+                    }),
+                    style: new ol.style.Style({
+                        fill: new ol.style.Fill({
+                            color: '#FF000066'
+                        }),
+                        stroke: new ol.style.Stroke({
+                            color: '#00FF00',
+                            width: 1
+                        })
+                    })
+                });
+            }
+
+            const osmLayer = new ol.layer.Tile({
+                source: new ol.source.OSM(),
+                zIndex: 0
+            });
+
+            const map = new ol.Map({
+                target: 'map',
+                layers: [osmLayer],
+                view: new ol.View({
+                    center: [-9800000, 3900000],
+                    zoom: 6
+                })
+            });
+
+            document.getElementById('button1').addEventListener('click', () => {
+                //browser will ask for credentials
+                var filename = document.getElementById('filename').value;
+                fetch('http://localhost:8090/' + filename, { credentials: 'include' })
+                    .then((response) => {
+                        if (response.ok) {
+                            return response.blob();
+                        }
+                    })
+                    .then((blob) => {
+                        const blobSource = new pmtiles.PMTiles(new pmtiles.FileSource(blob));
+                        map.setLayers([osmLayer, buildLayer(blobSource)]);
+                    })
+                    .catch((exc) => console.error(exc));
+            });
+
+            document.getElementById('button2').addEventListener('click', () => {
+                var filename = document.getElementById('filename').value;
+                const httpSource = new pmtiles.PMTiles(new pmtiles.FetchSource('http://localhost:8090/' + filename));
+                map.setLayers([osmLayer, buildLayer(httpSource)]);
+            });
+        </script>
+    </body>
+</html>
